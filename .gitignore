@@ -8,3 +8,5 @@ node_modules
 cdk.out
 .idea
 *.iml
+npm-audit.txt
+third-party-licenses.txt
