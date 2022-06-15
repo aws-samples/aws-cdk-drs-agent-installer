@@ -45,7 +45,7 @@ export class DrsAgentInstallerStack extends Stack {
         })
         const checkVolumesScript=`#!/bin/bash
 instanceId=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\`;
-vc=\`aws --region ${Aws.REGION} ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\"$instanceId\") | select(.State==\"attached\")|.VolumeId" | wc -l\`
+vc=\`aws --region ${Aws.REGION} ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\\"$instanceId\\") | select(.State==\\"attached\\")|.VolumeId" | wc -l\`
 if test -f "/tmp/volume-count"; then
     echo "/tmp/volume-count exists."
     old_volume_count=$(cat "/tmp/volume-count")
@@ -82,9 +82,9 @@ fi`
                                 `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-${this.region}.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
                                 `python3 /tmp/aws-replication-installer-init.py --region ${this.region} --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
                                 `result=$?`,
-                                `echo $\'${checkVolumesScript}\' > /tmp/check-volumes`,
+                                `echo \$\'${checkVolumesScript}\' > /tmp/check-volumes`,
                                 `chmod 755 /tmp/check-volumes`,
-                                `(crontab -l ; echo \"*/60 * * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1") | sort - | uniq - | crontab -`,
+                                `(crontab -l ; echo \"*/30 * * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1") | sort - | uniq - | crontab -`,
                                 `if [ $result -ne 0 ]; then echo \\"Installation failed\\" 1>&2 && exit $result; fi`
                             ]
                         }
