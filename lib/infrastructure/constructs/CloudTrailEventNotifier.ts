@@ -1,5 +1,5 @@
 import {Construct} from "constructs";
-import {Bucket, EventType} from "aws-cdk-lib/aws-s3";
+import {BlockPublicAccess, Bucket, BucketEncryption, EventType} from "aws-cdk-lib/aws-s3";
 import {ITopic, Topic} from "aws-cdk-lib/aws-sns";
 import {LambdaDestination} from "aws-cdk-lib/aws-s3-notifications";
 import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs";
@@ -8,6 +8,7 @@ import {Architecture, IFunction, Runtime} from "aws-cdk-lib/aws-lambda";
 import {Aws, Duration, RemovalPolicy} from "aws-cdk-lib";
 import {RetentionDays} from "aws-cdk-lib/aws-logs";
 import {Trail} from "aws-cdk-lib/aws-cloudtrail";
+import {Key} from "aws-cdk-lib/aws-kms";
 
 export interface CloudTrailEventConfig{
     cloudTrailBucketArn:string|undefined
@@ -25,7 +26,10 @@ export class CloudTrailEventNotifier extends Construct{
             cloudTrailBucket = new Bucket(this, "cloud-trail-bucket", {
                 bucketName: `${config.trailName}-bucket-${Aws.ACCOUNT_ID}-${Aws.REGION}`,
                 removalPolicy: RemovalPolicy.DESTROY,
-                autoDeleteObjects: true
+                autoDeleteObjects: true,
+                blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+                encryption: BucketEncryption.S3_MANAGED,
+                enforceSSL: true
             })
             const trail=new Trail(this,"attach-volume-trail",{
                 trailName: config.trailName,
@@ -38,11 +42,18 @@ export class CloudTrailEventNotifier extends Construct{
         }else{
             throw new Error("You must specify either ARN of the bucket where cloudtrail logs are written or the name of a new CloudTrail which will be created")
         }
+        const topicKey=new Key(this,"topic-key",{
+            removalPolicy: RemovalPolicy.DESTROY,
+            enableKeyRotation: true
+        })
         this.topic=new Topic(this,"cloud-trail-events-topic",{
             displayName: "cloud-trail-events-topic",
-            topicName: "cloud-trail-events-topic"
+            topicName: "cloud-trail-events-topic",
+            masterKey: topicKey
+
         })
-        this.fn = new NodejsFunction(this, "cloudtrail-event-publisher", {
+
+        this.fn = new NodejsFunction(this, "notifier-function", {
             memorySize: 256,
             architecture: Architecture.ARM_64,
             timeout: Duration.seconds(30),
@@ -62,6 +73,8 @@ export class CloudTrailEventNotifier extends Construct{
         cloudTrailBucket.grantRead(this.fn)
         cloudTrailBucket.addEventNotification(EventType.OBJECT_CREATED, new LambdaDestination(this.fn),{prefix: `AWSLogs/${Aws.ACCOUNT_ID}/CloudTrail/${Aws.REGION}`})
         this.topic.grantPublish(this.fn)
+
+
 
     }
 

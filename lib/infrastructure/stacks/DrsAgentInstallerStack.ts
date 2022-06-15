@@ -1,15 +1,9 @@
 import {Aws, RemovalPolicy, Stack, StackProps} from 'aws-cdk-lib';
 import {Construct} from 'constructs';
 import {CfnAssociation, CfnDocument} from "aws-cdk-lib/aws-ssm";
-import {Bucket} from "aws-cdk-lib/aws-s3";
-import {
-    Effect,
-    ManagedPolicy,
-    Role,
-    ServicePrincipal,
-    PolicyStatement,
-    IPrincipal
-} from "aws-cdk-lib/aws-iam";
+import {BlockPublicAccess, Bucket, BucketEncryption} from "aws-cdk-lib/aws-s3";
+import {Effect, IPrincipal, ManagedPolicy, PolicyStatement, Role, ServicePrincipal} from "aws-cdk-lib/aws-iam";
+import {NagSuppressions} from "cdk-nag";
 
 export interface DrsAgentInstallerStackConfig extends StackProps {
     assumeDrsRolePrincipals: IPrincipal[],
@@ -17,6 +11,7 @@ export interface DrsAgentInstallerStackConfig extends StackProps {
     documentVersion: string
     tagKeyToMatch: string
     tagValuesToMatch: string[]
+    installCheckVolumesScript: boolean
 }
 
 export class DrsAgentInstallerStack extends Stack {
@@ -41,9 +36,12 @@ export class DrsAgentInstallerStack extends Stack {
             bucketName: `state-manager-logs-${this.account}-${this.region}`,
             //REMOVE THIS FOR REAL DEPLOYMENTS!
             autoDeleteObjects: true,
-            removalPolicy: RemovalPolicy.DESTROY
+            removalPolicy: RemovalPolicy.DESTROY,
+            blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+            encryption: BucketEncryption.S3_MANAGED,
+            enforceSSL: true
         })
-        const checkVolumesScript=`#!/bin/bash
+        const checkVolumesScript = `#!/bin/bash
 instanceId=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\`;
 vc=\`aws --region ${Aws.REGION} ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\\"$instanceId\\") | select(.State==\\"attached\\")|.VolumeId" | wc -l\`
 if test -f "/tmp/volume-count"; then
@@ -62,6 +60,24 @@ else
     echo "/tmp/volume-count does not exist, creating with $vc"
     echo $vc > "/tmp/volume-count"
 fi`
+        const runCommands = [
+            "sudo apt-get install -y jq",
+            `aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt`,
+            "export AccessKey=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId')",
+            "export SecretAccessKey=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey')",
+            "export SessionToken=$(cat /tmp/credentials.txt | jq -r '.SessionToken')",
+            "rm /tmp/credentials.txt",
+            `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-${this.region}.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
+            `python3 /tmp/aws-replication-installer-init.py --region ${this.region} --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
+            "result=$?"]
+        if (props.installCheckVolumesScript) {
+            runCommands.push(
+                `echo $\'${checkVolumesScript}\' > /tmp/check-volumes`,
+                "chmod 755 /tmp/check-volumes",
+                "sed -i  '0,/\\$/{s/\\$//}' /tmp/check-volumes",
+                "(crontab -l ; echo \"*/30 * * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1\") | sort - | uniq - | crontab -")
+        }
+        runCommands.push("if [ $result -ne 0 ]; then echo \"Installation failed\" 1>&2 && exit $result; fi")
         const document = new CfnDocument(this, "install-drs-agent-document", {
             documentType: "Command",
             content: {
@@ -72,21 +88,7 @@ fi`
                         name: "install",
                         action: "aws:runShellScript",
                         inputs: {
-                            runCommand: [
-                                "sudo apt-get install -y jq",
-                                `aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt`,
-                                "export AccessKey=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId')",
-                                "export SecretAccessKey=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey')",
-                                "export SessionToken=$(cat /tmp/credentials.txt | jq -r '.SessionToken')",
-                                "rm /tmp/credentials.txt",
-                                `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-${this.region}.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
-                                `python3 /tmp/aws-replication-installer-init.py --region ${this.region} --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
-                                `result=$?`,
-                                `echo \$\'${checkVolumesScript}\' > /tmp/check-volumes`,
-                                `chmod 755 /tmp/check-volumes`,
-                                `(crontab -l ; echo \"*/30 * * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1") | sort - | uniq - | crontab -`,
-                                `if [ $result -ne 0 ]; then echo \\"Installation failed\\" 1>&2 && exit $result; fi`
-                            ]
+                            runCommand: runCommands
                         }
                     }
 
@@ -121,11 +123,14 @@ fi`
         })
         association.addDependsOn(document)
 
-        // The code that defines your stack goes here
-
-        // example resource
-        // const queue = new sqs.Queue(this, 'AwsCdkDrsPocQueue', {
-        //   visibilityTimeout: cdk.Duration.seconds(300)
-        // });
+        //cdk nag suppressions
+        NagSuppressions.addResourceSuppressionsByPath(this, "/drs-agent-installer/drs-installation-role/Resource", [{
+            id: "AwsSolutions-IAM4",
+            reason: "I'm ok using managed policies for this example"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/drs-agent-installer/state-manager-log-bucket/Resource", [{
+            id: "AwsSolutions-S1",
+            reason: "No need for access logs on this bucket"
+        }])
     }
 }

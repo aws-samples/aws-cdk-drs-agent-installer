@@ -6,8 +6,9 @@ import {RetentionDays} from "aws-cdk-lib/aws-logs";
 import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs";
 import {CloudTrailEventNotifier} from "../constructs/CloudTrailEventNotifier";
 import {SnsEventSource} from "aws-cdk-lib/aws-lambda-event-sources";
-import {Queue} from "aws-cdk-lib/aws-sqs";
-import {Effect, PolicyStatement} from "aws-cdk-lib/aws-iam";
+import {Queue, QueueEncryption} from "aws-cdk-lib/aws-sqs";
+import {AnyPrincipal, Effect, PolicyStatement} from "aws-cdk-lib/aws-iam";
+import {NagSuppressions} from "cdk-nag";
 
 export interface CloudTrailEventLambdaStackConfig extends StackProps{
     cloudTrailBucketArn:string|undefined
@@ -53,14 +54,68 @@ export class OnVolumeAttachEventStack extends Stack {
             effect: Effect.ALLOW,
             resources: ["*"]
         }))
+
         const dlq=new Queue(this,"on-volume-attach-event-dlq",{
             queueName: "on-volume-attach-event-dlq",
-            removalPolicy: RemovalPolicy.DESTROY
+            removalPolicy: RemovalPolicy.DESTROY,
+            encryption: QueueEncryption.KMS_MANAGED,
+
+
         })
+
+        dlq.addToResourcePolicy(new PolicyStatement({
+            sid:"Enforce TLS for all principals",
+            effect: Effect.DENY,
+            principals:[new AnyPrincipal()],
+            actions: ["sqs:*"],
+            conditions: {
+                "Bool": {"aws:SecureTransport": "false"},
+            }
+        }))
         eventHandler.addEventSource(new SnsEventSource(cloudTrailEventNotifier.topic,{
             deadLetterQueue: dlq
         }))
-
+        //cdk nag suppressions
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/cloud-trail-events-notifier/cloud-trail-bucket/Resource", [{
+            id: "AwsSolutions-S1",
+            reason: "No need for access logs on this bucket"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/cloud-trail-events-notifier/notifier-function/ServiceRole/Resource", [{
+            id: "AwsSolutions-IAM4",
+            reason: "I'm ok using a managed policy here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/cloud-trail-events-notifier/notifier-function/ServiceRole/DefaultPolicy/Resource", [{
+            id: "AwsSolutions-IAM5",
+            reason: "I'm ok using wildcard permissions here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource", [{
+            id: "AwsSolutions-IAM4",
+            reason: "I'm ok using a managed policy here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/DefaultPolicy/Resource", [{
+            id: "AwsSolutions-IAM5",
+            reason: "I'm ok using wildcard permissions here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource", [{
+            id: "AwsSolutions-IAM4",
+            reason: "I'm ok using a managed policy here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource", [{
+            id: "AwsSolutions-IAM5",
+            reason: "I'm ok using wildcard permissions here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/on-volume-attach-event-handler/ServiceRole/Resource", [{
+            id: "AwsSolutions-IAM4",
+            reason: "I'm ok using a managed policy here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/on-volume-attach-event-handler/ServiceRole/DefaultPolicy/Resource", [{
+            id: "AwsSolutions-IAM5",
+            reason: "I'm ok using wildcard permissions here"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/on-volume-attach-event-dlq/Resource", [{
+            id: "AwsSolutions-SQS3",
+            reason: "This is a DLQ"
+        }])
 
     }
 }

@@ -4,7 +4,8 @@ import * as cdk from 'aws-cdk-lib';
 import {DrsAgentInstallerStack} from "../lib/infrastructure/stacks/DrsAgentInstallerStack";
 import {OnVolumeAttachEventStack} from "../lib/infrastructure/stacks/OnVolumeAttachEventStack";
 import {ArnPrincipal} from "aws-cdk-lib/aws-iam";
-import {Aws} from "aws-cdk-lib";
+import {Aspects, Aws} from "aws-cdk-lib";
+import {AwsSolutionsChecks} from "cdk-nag";
 
 const app = new cdk.App();
 const documentName = "install-drs-agent"
@@ -15,7 +16,8 @@ new DrsAgentInstallerStack(app, 'drs-agent-installer', {
     documentName: documentName,
     documentVersion: "1",
     tagKeyToMatch: tagKeyToMatch,
-    tagValuesToMatch: tagValuesToMatch
+    tagValuesToMatch: tagValuesToMatch,
+    installCheckVolumesScript: true
 });
 
 new OnVolumeAttachEventStack(app, "on-attach-volume-event", {
@@ -25,3 +27,4 @@ new OnVolumeAttachEventStack(app, "on-attach-volume-event", {
     tagKeyToMatch: tagKeyToMatch,
     tagValuesToMatch: tagValuesToMatch
 })
+Aspects.of(app).add(new AwsSolutionsChecks())

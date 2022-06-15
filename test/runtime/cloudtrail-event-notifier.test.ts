@@ -1,4 +1,4 @@
-import {handler} from "../../lib/runtime/cloudtrail-event-publisher"
+import {handler} from "../../lib/runtime/cloudtrail-event-notifier"
 import * as path from "path"
 import {S3Event} from "aws-lambda";
 import {GetObjectCommand, S3Client} from "@aws-sdk/client-s3";
