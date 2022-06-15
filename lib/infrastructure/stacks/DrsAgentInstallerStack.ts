@@ -3,13 +3,12 @@ import {Construct} from 'constructs';
 import {CfnAssociation, CfnDocument} from "aws-cdk-lib/aws-ssm";
 import {Bucket} from "aws-cdk-lib/aws-s3";
 import {
-    AnyPrincipal,
     Effect,
     ManagedPolicy,
     Role,
     ServicePrincipal,
     PolicyStatement,
-    ArnPrincipal, IPrincipal
+    IPrincipal
 } from "aws-cdk-lib/aws-iam";
 
 export interface DrsAgentInstallerStackConfig extends StackProps {
@@ -44,8 +43,9 @@ export class DrsAgentInstallerStack extends Stack {
             autoDeleteObjects: true,
             removalPolicy: RemovalPolicy.DESTROY
         })
-        const checkVolumesScript=`!/bin/bash
-vc=\`aws --region us-east-2 ec2 describe-volumes | jq -r '.Volumes[].Attachments[] | select(.InstanceId=="i-06fb4906efb8eaa94") | select(.State=="attached")|.VolumeId' | wc -l\`
+        const checkVolumesScript=`#!/bin/bash
+instanceId=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\`;
+vc=\`aws --region ${Aws.REGION} ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\"$instanceId\") | select(.State==\"attached\")|.VolumeId" | wc -l\`
 if test -f "/tmp/volume-count"; then
     echo "/tmp/volume-count exists."
     old_volume_count=$(cat "/tmp/volume-count")
@@ -53,8 +53,7 @@ if test -f "/tmp/volume-count"; then
     if [ "$vc" -gt "$old_volume_count" ]; then
        echo $vc > /tmp/volume-count
        echo "Volume count changed from $old_volume_count to $vc"
-       aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ssm send-command  --instance-ids \`curl --silent http://169.254.169$
-       --document-name "install-drs-agent";
+       aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ssm send-command  --instance-ids \"$instanceId\" --document-name "install-drs-agent";
     else
        echo "Volume count not greater than $old_volume_count"
        echo $vc > "/tmp/volume-count"
@@ -83,7 +82,7 @@ fi`
                                 `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-${this.region}.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
                                 `python3 /tmp/aws-replication-installer-init.py --region ${this.region} --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
                                 `result=$?`,
-                                `echo ${checkVolumesScript} >> /tmp/check-volumes`,
+                                `echo $\'${checkVolumesScript}\' > /tmp/check-volumes`,
                                 `chmod 755 /tmp/check-volumes`,
                                 `(crontab -l ; echo \"*/60 * * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1") | sort - | uniq - | crontab -`,
                                 `if [ $result -ne 0 ]; then echo \\"Installation failed\\" 1>&2 && exit $result; fi`
