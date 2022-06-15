@@ -10,3 +10,4 @@ cdk.out
 *.iml
 npm-audit.txt
 third-party-licenses.txt
+cfn-nag.txt
