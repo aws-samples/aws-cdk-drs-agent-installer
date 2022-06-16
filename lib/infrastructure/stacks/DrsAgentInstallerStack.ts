@@ -61,7 +61,7 @@ export class DrsAgentInstallerStack extends Stack {
         })
         const checkVolumesScript = `#!/bin/bash
 instanceId=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\`;
-vc=\`aws --region ${Aws.REGION} ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\\"$instanceId\\") | select(.State==\\"attached\\")|.VolumeId" | wc -l\`
+vc=\`aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\\"$instanceId\\") | select(.State==\\"attached\\")|.VolumeId" | wc -l\`
 if test -f "/tmp/volume-count"; then
     echo "/tmp/volume-count exists."
     old_volume_count=$(cat "/tmp/volume-count")
@@ -79,7 +79,8 @@ else
     echo $vc > "/tmp/volume-count"
 fi`
         const runCommands = [
-            `aws --region ${Aws.REGION} ssm send-command --instance-ids=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\` --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance'`,
+            "sudo apt-get install -y jq",
+            `aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ssm send-command --instance-ids=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\` --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance' --parameters Region=\`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\``,
             "result=$?"]
         if (props.installCheckVolumesScript) {
             runCommands.push(
