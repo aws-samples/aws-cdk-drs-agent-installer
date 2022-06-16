@@ -12,8 +12,8 @@ The stack also deploys associated roles and an S3 bucket for logging the install
 The EC2 instance role will need to be specified in the stacks ['assumeDrsRolePrincipals'](./bin/app.ts#L32) property so that it has permissions to assume the 'drs-installation-role'.
 
 ### check-volumes script
-The dr-agent-installer can be configured to install a bash script and cron job on the EC2 instance. 
-This script monitors the instance for new volumes being added and initiating a re-installation of the DRS agent to force the new volume to be scanned.  
+The dr-agent-installer stack can be configured to install a bash script and cron job on the target EC2 instances. 
+This script monitors the instance for new volumes being added and initiates a re-installation of the DRS agent to force the new volume to be scanned.  
 
 This approach is a lower cost alternative to the [on-attach-volume-event](#on-attach-volume-event) approach described below but is potentially less robust. The EC2 instance role will also need to be given permissions to invoke the SSM document.
 
