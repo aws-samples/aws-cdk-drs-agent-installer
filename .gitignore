@@ -1,0 +1,13 @@
+*.js
+!jest.config.js
+*.d.ts
+node_modules
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+.idea
+*.iml
+npm-audit.txt
+third-party-licenses.txt
+cfn-nag.txt
