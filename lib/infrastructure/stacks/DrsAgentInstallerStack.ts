@@ -69,7 +69,7 @@ if test -f "/tmp/volume-count"; then
     if [ "$vc" -gt "$old_volume_count" ]; then
        echo $vc > /tmp/volume-count
        echo "Volume count changed from $old_volume_count to $vc"
-       aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ssm send-command  --instance-ids \"$instanceId\" --document-name "install-drs-agent";
+       aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ssm send-command  --instance-ids \"$instanceId\" --document-name "${props.documentName}";
     else
        echo "Volume count not greater than $old_volume_count"
        echo $vc > "/tmp/volume-count"
@@ -79,14 +79,7 @@ else
     echo $vc > "/tmp/volume-count"
 fi`
         const runCommands = [
-            "sudo apt-get install -y jq",
-            `aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt`,
-            "export AccessKey=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId')",
-            "export SecretAccessKey=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey')",
-            "export SessionToken=$(cat /tmp/credentials.txt | jq -r '.SessionToken')",
-            "rm /tmp/credentials.txt",
-            `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-${this.region}.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
-            `python3 /tmp/aws-replication-installer-init.py --region ${this.region} --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
+            `aws --region ${Aws.REGION} ssm send-command --instance-ids=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\` --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance'`,
             "result=$?"]
         if (props.installCheckVolumesScript) {
             runCommands.push(
