@@ -41,8 +41,18 @@ export class DrsAgentInstallerStack extends Stack {
         const installationRole = new Role(this, "drs-installation-role", {
             assumedBy: new ServicePrincipal("ec2.amazonaws.com"),
             managedPolicies: [ManagedPolicy.fromManagedPolicyArn(this, "AWSElasticDisasterRecoveryAgentInstallationPolicy", "arn:aws:iam::aws:policy/AWSElasticDisasterRecoveryAgentInstallationPolicy")]
-        })
 
+        })
+        installationRole.addToPrincipalPolicy(new PolicyStatement({
+            sid: "AllowDrsInstallSendCommand",
+            effect: Effect.ALLOW,
+            actions: ["ssm:SendCommand"],
+            resources: [
+                `arn:${Aws.PARTITION}:ssm:*:${Aws.ACCOUNT_ID}:document/${props.documentName}`,
+                `arn:${Aws.PARTITION}:ec2:*:${Aws.ACCOUNT_ID}:instance/*`,
+                `arn:${Aws.PARTITION}:ssm:${Aws.REGION}::document/AWSDisasterRecovery-InstallDRAgentOnInstance`
+            ]
+        }))
         installationRole.assumeRolePolicy?.addStatements(
             new PolicyStatement({
                 actions: ['sts:AssumeRole'],
@@ -61,7 +71,8 @@ export class DrsAgentInstallerStack extends Stack {
         })
         const checkVolumesScript = `#!/bin/bash
 instanceId=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\`;
-vc=\`aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\\"$instanceId\\") | select(.State==\\"attached\\")|.VolumeId" | wc -l\`
+region=\`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\`
+vc=\`aws --region $region ec2 describe-volumes | jq --arg instanceId "$instanceId" -r ".Volumes[].Attachments[] | select(.InstanceId==\\"$instanceId\\") | select(.State==\\"attached\\")|.VolumeId" | wc -l\`
 if test -f "/tmp/volume-count"; then
     echo "/tmp/volume-count exists."
     old_volume_count=$(cat "/tmp/volume-count")
@@ -69,7 +80,12 @@ if test -f "/tmp/volume-count"; then
     if [ "$vc" -gt "$old_volume_count" ]; then
        echo $vc > /tmp/volume-count
        echo "Volume count changed from $old_volume_count to $vc"
-       aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ssm send-command  --instance-ids \"$instanceId\" --document-name "${props.documentName}";
+       aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt\`,
+       export AWS_ACCESS_KEY_ID=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId'),
+       export AWS_SECRET_ACCESS_KEY=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey'),
+       export AWS_DEFAULT_REGION=$(cat /tmp/credentials.txt | jq -r '.SessionToken'),
+       rm /tmp/credentials.txt",
+       aws --region $region ssm send-command  --instance-ids \"$instanceId\" --document-name "${props.documentName}";
     else
        echo "Volume count not greater than $old_volume_count"
        echo $vc > "/tmp/volume-count"
@@ -79,8 +95,20 @@ else
     echo $vc > "/tmp/volume-count"
 fi`
         const runCommands = [
-            "sudo apt-get install -y jq",
-            `aws --region \`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\` ssm send-command --instance-ids=\`curl --silent http://169.254.169.254/latest/meta-data/instance-id\` --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance' --parameters Region=\`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region\``,
+            "curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"/tmp/awscliv2.zip\"",
+            "unzip -o /tmp/awscliv2.zip -d /tmp",
+            "sudo /tmp/aws/install --update",
+            "if [[ -x \"/usr/bin/apt-get\" ]]; then sudo apt-get install -y jq; elif [[ -x \"/usr/bin/yum\" ]]; then sudo yum install -y jq; fi",
+            "instanceId=`curl --silent http://169.254.169.254/latest/meta-data/instance-id`",
+            "region=`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region`",
+            `aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt`,
+            "AccessKey=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId')",
+            "SecretAccessKey=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey')",
+            "SessionToken=$(cat /tmp/credentials.txt | jq -r '.SessionToken')",
+            "rm /tmp/credentials.txt",
+            // `aws --region $region ssm send-command --instance-ids=$instanceId --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance' --parameters Region=$region`,
+            `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-$region.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
+            `python3 /tmp/aws-replication-installer-init.py --region $region --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
             "result=$?"]
         if (props.installCheckVolumesScript) {
             runCommands.push(
@@ -139,6 +167,10 @@ fi`
         NagSuppressions.addResourceSuppressionsByPath(this, "/drs-agent-installer/drs-installation-role/Resource", [{
             id: "AwsSolutions-IAM4",
             reason: "I'm ok using managed policies for this example"
+        }])
+        NagSuppressions.addResourceSuppressionsByPath(this, "/drs-agent-installer/drs-installation-role/DefaultPolicy/Resource", [{
+            id: "AwsSolutions-IAM5",
+            reason: "I'm ok using wildcard permissions here"
         }])
         NagSuppressions.addResourceSuppressionsByPath(this, "/drs-agent-installer/state-manager-log-bucket/Resource", [{
             id: "AwsSolutions-S1",
