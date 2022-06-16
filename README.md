@@ -7,7 +7,7 @@ This project provides a set of examples for installing the [AWS Elastic Disaster
 The project consists of two stacks;
 
 ### [drs-agent-installer](./lib/infrastructure/stacks/DrsAgentInstallerStack.ts)
-This stack deploys an SSM Association which will run an SSM Document that installs the DRS agent on EC2 instances that match a specified tag. 
+This stack deploys an [SSM Association](./lib/infrastructure/stacks/DrsAgentInstallerStack.ts#L120) which will run an [SSM Document](./lib/infrastructure/stacks/DrsAgentInstallerStack.ts#L99) that installs the DRS agent on EC2 instances that match a specified tag. 
 The stack also deploys associated roles and an S3 bucket for logging the installation process. 
 The EC2 instance role will need to be specified in the stacks ['assumeDrsRolePrincipals'](./bin/app.ts#L32) property so that it has permissions to assume the 'drs-installation-role'.
 
