@@ -39,10 +39,12 @@ export class DrsAgentInstallerStack extends Stack {
         super(scope, id, props);
 
         const installationRole = new Role(this, "drs-installation-role", {
+
             assumedBy: new ServicePrincipal("ec2.amazonaws.com"),
             managedPolicies: [ManagedPolicy.fromManagedPolicyArn(this, "AWSElasticDisasterRecoveryAgentInstallationPolicy", "arn:aws:iam::aws:policy/AWSElasticDisasterRecoveryAgentInstallationPolicy")]
 
         })
+        installationRole.applyRemovalPolicy(RemovalPolicy.DESTROY)
         installationRole.addToPrincipalPolicy(new PolicyStatement({
             sid: "AllowDrsInstallSendCommand",
             effect: Effect.ALLOW,
@@ -59,7 +61,14 @@ export class DrsAgentInstallerStack extends Stack {
                 effect: Effect.ALLOW,
                 principals: props.assumeDrsRolePrincipals
             }))
-
+        const allowAssumeDrsInstallerRole=new ManagedPolicy(this,"allow-assume-drs-installer-role",{
+            managedPolicyName: "AllowAssumeDrsInstallerRole",
+            statements: [new PolicyStatement({
+                actions: ['sts:AssumeRole'],
+                effect: Effect.ALLOW,
+                resources: [installationRole.roleArn]
+            })]
+        })
         const bucket = new Bucket(this, "state-manager-log-bucket", {
             bucketName: `state-manager-logs-${this.account}-${this.region}`,
             //REMOVE THIS FOR REAL DEPLOYMENTS!
@@ -83,7 +92,7 @@ if test -f "/tmp/volume-count"; then
        aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt
        export AWS_ACCESS_KEY_ID=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId')
        export AWS_SECRET_ACCESS_KEY=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey')
-       export AWS_DEFAULT_REGION=$(cat /tmp/credentials.txt | jq -r '.SessionToken')
+       export AWS_SESSION_TOKEN=$(cat /tmp/credentials.txt | jq -r '.SessionToken')
        rm /tmp/credentials.txt
        aws --region $region ssm send-command  --instance-ids \"$instanceId\" --document-name "${props.documentName}";
     else
@@ -108,7 +117,7 @@ fi`
             "rm /tmp/credentials.txt",
             // `aws --region $region ssm send-command --instance-ids=$instanceId --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance' --parameters Region=$region`,
             `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-$region.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
-            `python3 /tmp/aws-replication-installer-init.py --region $region --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
+            `screen -S python3 /tmp/aws-replication-installer-init.py --region $region --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
             "result=$?"]
         if (props.installCheckVolumesScript) {
             runCommands.push(
