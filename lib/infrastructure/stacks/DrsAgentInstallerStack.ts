@@ -69,6 +69,7 @@ export class DrsAgentInstallerStack extends Stack {
                 resources: [installationRole.roleArn]
             })]
         })
+        allowAssumeDrsInstallerRole.applyRemovalPolicy(RemovalPolicy.DESTROY)
         const bucket = new Bucket(this, "state-manager-log-bucket", {
             bucketName: `state-manager-logs-${this.account}-${this.region}`,
             //REMOVE THIS FOR REAL DEPLOYMENTS!
@@ -117,7 +118,7 @@ fi`
             "rm /tmp/credentials.txt",
             // `aws --region $region ssm send-command --instance-ids=$instanceId --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance' --parameters Region=$region`,
             `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-$region.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
-            `screen -S python3 /tmp/aws-replication-installer-init.py --region $region --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken`,
+            `nohup python3 /tmp/aws-replication-installer-init.py --region $region --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken &`,
             "result=$?"]
         if (props.installCheckVolumesScript) {
             runCommands.push(
