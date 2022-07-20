@@ -80,19 +80,19 @@ if test -f "/tmp/volume-count"; then
     if [ "$vc" -gt "$old_volume_count" ]; then
        echo $vc > /tmp/volume-count
        echo "Volume count changed from $old_volume_count to $vc"
-       aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt\`,
-       export AWS_ACCESS_KEY_ID=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId'),
-       export AWS_SECRET_ACCESS_KEY=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey'),
-       export AWS_DEFAULT_REGION=$(cat /tmp/credentials.txt | jq -r '.SessionToken'),
-       rm /tmp/credentials.txt",
+       aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt
+       export AWS_ACCESS_KEY_ID=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId')
+       export AWS_SECRET_ACCESS_KEY=$(cat /tmp/credentials.txt | jq -r '.SecretAccessKey')
+       export AWS_DEFAULT_REGION=$(cat /tmp/credentials.txt | jq -r '.SessionToken')
+       rm /tmp/credentials.txt
        aws --region $region ssm send-command  --instance-ids \"$instanceId\" --document-name "${props.documentName}";
     else
        echo "Volume count not greater than $old_volume_count"
-       echo $vc > "/tmp/volume-count"
+       echo $vc > /tmp/volume-count
     fi
 else
     echo "/tmp/volume-count does not exist, creating with $vc"
-    echo $vc > "/tmp/volume-count"
+    echo $vc > /tmp/volume-count
 fi`
         const runCommands = [
             "curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"/tmp/awscliv2.zip\"",
@@ -115,7 +115,7 @@ fi`
                 `echo $\'${checkVolumesScript}\' > /tmp/check-volumes`,
                 "chmod 755 /tmp/check-volumes",
                 "sed -i  '0,/\\$/{s/\\$//}' /tmp/check-volumes",
-                "(crontab -l ; echo \"*/30 * * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1\") | sort - | uniq - | crontab -")
+                "(crontab -l ; echo \"* */12 * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1\") | sort - | uniq - | crontab -")
         }
         runCommands.push("if [ $result -ne 0 ]; then echo \"Installation failed\" 1>&2 && exit $result; fi")
         const document = new CfnDocument(this, "install-drs-agent-document", {
