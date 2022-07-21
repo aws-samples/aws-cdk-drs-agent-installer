@@ -61,15 +61,7 @@ export class DrsAgentInstallerStack extends Stack {
                 effect: Effect.ALLOW,
                 principals: props.assumeDrsRolePrincipals
             }))
-        const allowAssumeDrsInstallerRole=new ManagedPolicy(this,"allow-assume-drs-installer-role",{
-            managedPolicyName: "AllowAssumeDrsInstallerRole",
-            statements: [new PolicyStatement({
-                actions: ['sts:AssumeRole'],
-                effect: Effect.ALLOW,
-                resources: [installationRole.roleArn]
-            })]
-        })
-        allowAssumeDrsInstallerRole.applyRemovalPolicy(RemovalPolicy.DESTROY)
+
         const bucket = new Bucket(this, "state-manager-log-bucket", {
             bucketName: `state-manager-logs-${this.account}-${this.region}`,
             //REMOVE THIS FOR REAL DEPLOYMENTS!
