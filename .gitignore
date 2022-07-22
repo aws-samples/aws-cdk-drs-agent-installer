@@ -11,3 +11,4 @@ cdk.out
 npm-audit.txt
 third-party-licenses.txt
 cfn-nag.txt
+*.drawio.bkp

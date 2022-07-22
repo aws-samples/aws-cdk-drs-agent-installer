@@ -38,8 +38,6 @@ new DrsAgentInstallerStack(app, 'drs-agent-installer', {
 });
 
 new OnVolumeAttachEventStack(app, "on-attach-volume-event", {
-    cloudTrailBucketArn: app.node.tryGetContext("bucket"),
-    trailName: app.node.tryGetContext("trailName"),
     documentName: documentName,
     tagKeyToMatch: tagKeyToMatch,
     tagValuesToMatch: tagValuesToMatch

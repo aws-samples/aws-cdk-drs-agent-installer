@@ -22,18 +22,17 @@ import * as path from "path";
 import {Architecture, Runtime} from "aws-cdk-lib/aws-lambda";
 import {RetentionDays} from "aws-cdk-lib/aws-logs";
 import {NodejsFunction} from "aws-cdk-lib/aws-lambda-nodejs";
-import {CloudTrailEventNotifier} from "../constructs/CloudTrailEventNotifier";
-import {SnsEventSource} from "aws-cdk-lib/aws-lambda-event-sources";
 import {Queue, QueueEncryption} from "aws-cdk-lib/aws-sqs";
 import {AnyPrincipal, Effect, PolicyStatement} from "aws-cdk-lib/aws-iam";
 import {NagSuppressions} from "cdk-nag";
+import {EventBus, Rule} from "aws-cdk-lib/aws-events";
+import {LambdaFunction} from "aws-cdk-lib/aws-events-targets";
 
-export interface CloudTrailEventLambdaStackConfig extends StackProps{
-    cloudTrailBucketArn:string|undefined
-    trailName:string|undefined,
-    documentName:string
-    tagKeyToMatch:string,
-    tagValuesToMatch:string[]
+export interface CloudTrailEventLambdaStackConfig extends StackProps {
+
+    documentName: string
+    tagKeyToMatch: string,
+    tagValuesToMatch: string[]
 
 }
 
@@ -41,13 +40,7 @@ export class OnVolumeAttachEventStack extends Stack {
     constructor(scope: Construct, id: string, props: CloudTrailEventLambdaStackConfig) {
         super(scope, id, props);
 
-        const cloudTrailEventNotifier=new CloudTrailEventNotifier(this,"cloud-trail-events-notifier",{
-            eventSourceToTrack:"ec2\.amazonaws\.com",
-            eventNameToTrack:"AttachVolume",
-            cloudTrailBucketArn: props.cloudTrailBucketArn,
-            trailName: props.trailName
-        })
-        const eventHandler=new NodejsFunction(this, "on-volume-attach-event-handler", {
+        const eventHandler: NodejsFunction = new NodejsFunction(this, "on-volume-attach-event-handler", {
             memorySize: 256,
             architecture: Architecture.ARM_64,
             timeout: Duration.seconds(30),
@@ -65,47 +58,47 @@ export class OnVolumeAttachEventStack extends Stack {
         eventHandler.grantPrincipal.addToPrincipalPolicy(new PolicyStatement({
             actions: ["ssm:SendCommand"],
             effect: Effect.ALLOW,
-            resources: [`arn:${Aws.PARTITION}:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:document/${props.documentName}`,`arn:${Aws.PARTITION}:ec2:${Aws.REGION}:${Aws.ACCOUNT_ID}:instance/*`]
+            resources: [`arn:${Aws.PARTITION}:ssm:${Aws.REGION}:${Aws.ACCOUNT_ID}:document/${props.documentName}`, `arn:${Aws.PARTITION}:ec2:${Aws.REGION}:${Aws.ACCOUNT_ID}:instance/*`]
         }))
         eventHandler.grantPrincipal.addToPrincipalPolicy(new PolicyStatement({
             actions: ["ec2:DescribeTags"],
             effect: Effect.ALLOW,
             resources: ["*"]
         }))
+        const eventBus = EventBus.fromEventBusName(this, "default-event-bus", "default")
+        const attachVolumeRule = new Rule(this, "on-attach-volume-rule", {
+            eventBus: eventBus,
+            eventPattern: {
+                source: ["aws.ec2"],
+                detailType: ["AWS API Call via CloudTrail"],
+                detail: {
+                    eventSource: ["ec2.amazonaws.com"],
+                    eventName: ["AttachVolume"]
+                }
+            },
+            targets: [new LambdaFunction(eventHandler)]
 
-        const dlq=new Queue(this,"on-volume-attach-event-dlq",{
+        })
+
+        const dlq = new Queue(this, "on-volume-attach-event-dlq", {
             queueName: "on-volume-attach-event-dlq",
             removalPolicy: RemovalPolicy.DESTROY,
             encryption: QueueEncryption.KMS_MANAGED,
 
-
         })
 
         dlq.addToResourcePolicy(new PolicyStatement({
-            sid:"Enforce TLS for all principals",
+            sid: "Enforce TLS for all principals",
             effect: Effect.DENY,
-            principals:[new AnyPrincipal()],
+            principals: [new AnyPrincipal()],
             actions: ["sqs:*"],
             conditions: {
                 "Bool": {"aws:SecureTransport": "false"},
             }
         }))
-        eventHandler.addEventSource(new SnsEventSource(cloudTrailEventNotifier.topic,{
-            deadLetterQueue: dlq
-        }))
+
         //cdk nag suppressions
-        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/cloud-trail-events-notifier/cloud-trail-bucket/Resource", [{
-            id: "AwsSolutions-S1",
-            reason: "No need for access logs on this bucket"
-        }])
-        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/cloud-trail-events-notifier/notifier-function/ServiceRole/Resource", [{
-            id: "AwsSolutions-IAM4",
-            reason: "I'm ok using a managed policy here"
-        }])
-        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/cloud-trail-events-notifier/notifier-function/ServiceRole/DefaultPolicy/Resource", [{
-            id: "AwsSolutions-IAM5",
-            reason: "I'm ok using wildcard permissions here"
-        }])
+
         NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/LogRetentionaae0aa3c5b4d4f87b02d85b201efdd8a/ServiceRole/Resource", [{
             id: "AwsSolutions-IAM4",
             reason: "I'm ok using a managed policy here"
@@ -114,14 +107,7 @@ export class OnVolumeAttachEventStack extends Stack {
             id: "AwsSolutions-IAM5",
             reason: "I'm ok using wildcard permissions here"
         }])
-        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource", [{
-            id: "AwsSolutions-IAM4",
-            reason: "I'm ok using a managed policy here"
-        }])
-        NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource", [{
-            id: "AwsSolutions-IAM5",
-            reason: "I'm ok using wildcard permissions here"
-        }])
+
         NagSuppressions.addResourceSuppressionsByPath(this, "/on-attach-volume-event/on-volume-attach-event-handler/ServiceRole/Resource", [{
             id: "AwsSolutions-IAM4",
             reason: "I'm ok using a managed policy here"
