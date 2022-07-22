@@ -100,8 +100,16 @@ fi`
             "curl \"https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip\" -o \"/tmp/awscliv2.zip\"",
             "unzip -o /tmp/awscliv2.zip -d /tmp",
             "sudo /tmp/aws/install --update",
-            "if [[ -x \"/usr/bin/apt-get\" ]]; then sudo apt-get install -y jq; elif [[ -x \"/usr/bin/yum\" ]]; then sudo yum install -y jq; fi",
-            "instanceId=`curl --silent http://169.254.169.254/latest/meta-data/instance-id`",
+            "sudo rm -Rf /tmp/aws",
+            "if [[ -x \"/usr/bin/apt-get\" ]]; then sudo apt-get install -y jq; elif [[ -x \"/usr/bin/yum\" ]]; then sudo yum install -y jq; fi"]
+        if (props.installCheckVolumesScript) {
+            runCommands.push(
+                `echo $\'${checkVolumesScript}\' > /tmp/check-volumes`,
+                "chmod 755 /tmp/check-volumes",
+                "sed -i  '0,/\\$/{s/\\$//}' /tmp/check-volumes",
+                "(crontab -l ; echo \"* */12 * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1\") | sort - | uniq - | crontab -")
+        }
+        runCommands.push("instanceId=`curl --silent http://169.254.169.254/latest/meta-data/instance-id`",
             "region=`curl --silent http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region`",
             `aws sts assume-role --role-arn ${installationRole.roleArn} --role-session-name drs_agent | jq -r '.Credentials' > /tmp/credentials.txt`,
             "AccessKey=$(cat /tmp/credentials.txt | jq -r '.AccessKeyId')",
@@ -110,15 +118,8 @@ fi`
             "rm /tmp/credentials.txt",
             // `aws --region $region ssm send-command --instance-ids=$instanceId --document-name 'AWSDisasterRecovery-InstallDRAgentOnInstance' --parameters Region=$region`,
             `wget -O /tmp/aws-replication-installer-init.py https://aws-elastic-disaster-recovery-$region.s3.amazonaws.com/latest/linux/aws-replication-installer-init.py`,
-            `nohup python3 /tmp/aws-replication-installer-init.py --region $region --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken &`,
-            "result=$?"]
-        if (props.installCheckVolumesScript) {
-            runCommands.push(
-                `echo $\'${checkVolumesScript}\' > /tmp/check-volumes`,
-                "chmod 755 /tmp/check-volumes",
-                "sed -i  '0,/\\$/{s/\\$//}' /tmp/check-volumes",
-                "(crontab -l ; echo \"* */12 * * * /tmp/check-volumes >>/tmp/check-volumes.log 2>&1\") | sort - | uniq - | crontab -")
-        }
+            `/usr/bin/nohup python3 /tmp/aws-replication-installer-init.py --region $region --no-prompt --aws-access-key-id $AccessKey --aws-secret-access-key $SecretAccessKey --aws-session-token $SessionToken &`,
+            "result=$?")
         runCommands.push("if [ $result -ne 0 ]; then echo \"Installation failed\" 1>&2 && exit $result; fi")
         const document = new CfnDocument(this, "install-drs-agent-document", {
             documentType: "Command",
