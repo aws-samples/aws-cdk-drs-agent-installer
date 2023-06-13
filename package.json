@@ -26,10 +26,10 @@
     "cdk-nag": "^2.14.35"
   },
   "dependencies": {
-    "@aws-sdk/client-ec2": "^3.110.0",
-    "@aws-sdk/client-s3": "^3.109.0",
-    "@aws-sdk/client-sns": "^3.109.0",
-    "@aws-sdk/client-ssm": "^3.109.0",
+    "@aws-sdk/client-ec2": "^3.350.0",
+    "@aws-sdk/client-s3": "^3.350.0",
+    "@aws-sdk/client-sns": "^3.350.0",
+    "@aws-sdk/client-ssm": "^3.350.0",
     "@types/aws-lambda": "^8.10.100",
     "zlib": "^1.0.5"
   }
